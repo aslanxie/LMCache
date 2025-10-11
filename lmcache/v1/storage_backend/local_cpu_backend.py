@@ -282,15 +282,46 @@ class LocalCPUBackend(AllocatorBackendInterface):
                         self.hot_cache, num_candidates=num_candidates
                     )
                     if evict_keys:
+                        # Zhixue try to fix layerwise error
+                        # only free CPU RAM cache, and free all layer in a chunk
+                        evict_keys_count += len(evict_keys)
+                        
                         # we can continue trying to evict from the hot_cache
                         # and don't need to wait for other requests yet
                         wait_other_requests = False
-                        logger.debug(
-                            f"Evicting {len(evict_keys)} chunks from cpu memory"
-                        )
+                        for evict_key in evict_keys:
+                            # all layers chunk_hash is the same in a same chunk
+                            evict_key_all_layer = []
+                            chunk_hash = evict_key.chunk_hash
+                            logger.debug(f"chunk_hash {chunk_hash}")
+                            
+                            for key in self.hot_cache:
+                                #logger.debug(f"key {key.chunk_hash}")
+                                if str(key.chunk_hash) == str(chunk_hash):
+                                    evict_key_all_layer.append(key)
+                            
+                            
+                            logger.debug(f"evict_key_all_layer with hask {chunk_hash}: {evict_key_all_layer}")
+                            
+                            old_mem_objs = []
+                            for key in evict_key_all_layer:
+                                old_mem_objs.append(self.hot_cache[key])
+                                self.cache_policy.update_on_force_evict(key)
+                                self.hot_cache.pop(key, None)
+
+                            self.memory_allocator.batched_free(old_mem_objs)
+                            logger.debug(
+                                f"Evicting {len(old_mem_objs)} chunks from cpu memory"
+                            )
+                            
+                            
+                        
+                        #logger.debug(
+                        #        f"Evicting {len(evict_keys)} chunks from cpu memory: {evict_keys}"
+                        #)
                         # remove
-                        self.batched_remove(evict_keys, force=False)
-                        evict_keys_count += len(evict_keys)
+                        #self.batched_remove(evict_keys, force=False)
+                        #evict_keys_count += len(evict_keys)
                     else:
                         self.stats_monitor.update_local_cpu_evict_failed_count(
                             num_candidates

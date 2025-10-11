@@ -377,6 +377,13 @@ class LocalDiskBackend(StorageBackendInterface):
         for key in keys:
             self.disk_lock.acquire()
             assert key in self.dict, f"Key {key} not found in disk cache after pinning"
+            
+            # Zhixue: skip if key in cpu cache
+            if self.local_cpu_backend.contains(key):
+                logger.info(f"Key is already in CPU backend:{key}")
+                #keys.remove(key)
+                #continue
+            
 
             # NOTE(Jiayi): Currently, we consider prefetch as cache hit.
             self.cache_policy.update_on_hit(key, self.dict)

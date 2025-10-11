@@ -570,6 +570,7 @@ class LMCacheEngine:
         starts = []
         ends = []
         keys = []
+        locations = [] 
 
         request_configs = kwargs.get("request_configs")
         if request_configs is not None and len(request_configs) != 0:
@@ -584,20 +585,34 @@ class LMCacheEngine:
             keys_multi_layer = key.split_layers(self.num_layers)
 
             # NOTE: Only check the first layer
-            if not self.storage_manager.contains(keys_multi_layer[0]):
+            location = self.storage_manager.contains(keys_multi_layer[0])
+            if not location: #if not self.storage_manager.contains(keys_multi_layer[0]):
                 break
 
             starts.append(start)
             ends.append(end)
             keys.append(keys_multi_layer)
+            locations.append(location)
 
             ret_mask[start:end] = True
 
         if keys:
             # Transpose the keys into layer major format
             keys_layer_major = [list(row) for row in zip(*keys, strict=False)]
+            #logger.debug(f"locations {locations}, keys {keys}")
+            
+            # ["LocalCPUBackend", "LocalDiskBackend"]: 
+            # cache in LocalCPUBackend should be in LocalDiskBackend
+            # cache in LocalDiskBackend maybe evict from LocalCPUBackend
+            # if different chunk in different backend ["LocalCPUBackend", "LocalDiskBackend"], 
+            # force to load from disk
+            # LocalDiskBackend will check the key and skip if already in LocalCPUBackend
+            location = locations[0]
+            if "LocalDiskBackend" in locations:
+                location = "LocalDiskBackend"          
+                logger.info(f"Force to load keys from locations {location}")
 
-            get_generator = self.storage_manager.layerwise_batched_get(keys_layer_major)
+            get_generator = self.storage_manager.layerwise_batched_get(keys_layer_major, location)
 
             assert isinstance(
                 self.gpu_connector,
